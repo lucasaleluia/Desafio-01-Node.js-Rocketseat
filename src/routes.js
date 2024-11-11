@@ -1,11 +1,17 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
+import multer from 'multer';
+import csv from 'csv-parser'
+import fs from 'fs'
 
 // Essa funcionalidade do express cria um "mini-aplicativo" de rotas para que sirva como um agrupador de rotas
 const router = express.Router();
 
 // Esse comando exporta o router para que ele possa ser usado em outros arquivos
 export default router;
+
+// define o diretório de upload teporário
+const upload = multer({ dest: 'uploads/' });
 
 // Configurar a rota get para listar todas as tarefas
 router.get('/tasks', (req, res) => { 
@@ -104,3 +110,56 @@ router.patch('/tasks/:id/complete', (req, res) => {
   // Retorna a tarefa atualizada
   res.json(task);
 });
+
+// Configurando a rota POST para aceitar o arquivo csv como input
+router.post('/tasks/import', upload.single('file'), (req, res) => {
+  console.log("Recebendo requisição para /tasks/import");
+
+  // Log para verificar se o arquivo está presente
+  if (!req.file) {
+      console.log("Erro: Nenhum arquivo foi enviado");
+      return res.status(400).json({ message: 'File is required' });
+  }
+  
+  console.log("Arquivo recebido:", req.file);
+
+  const tasksFromCSV = [];
+  
+  // Log para indicar o início da leitura do arquivo
+  console.log("Iniciando a leitura do arquivo CSV...");
+
+  fs.createReadStream(req.file.path)
+      .pipe(csv())
+      .on('data', (row) => {
+          console.log("Linha do CSV processada:", row); // Log para cada linha do CSV
+          const { title, description } = row;
+          tasksFromCSV.push({
+              id: randomUUID(),
+              title,
+              description,
+              completed_at: null,
+              created_at: new Date(),
+              updated_at: new Date()
+          });
+      })
+      .on('end', () => {
+          console.log("Leitura do arquivo CSV concluída");
+          
+          tasks.push(...tasksFromCSV);
+          
+          // Log após adicionar as tarefas no array principal
+          console.log("Tarefas importadas com sucesso:", tasksFromCSV);
+
+          // Remove o arquivo CSV após o processamento
+          fs.unlinkSync(req.file.path);
+          console.log("Arquivo CSV temporário removido.");
+
+          // Responde com as novas tarefas importadas
+          res.status(201).json({ message: 'Tasks imported successfully', tasks: tasksFromCSV });
+      })
+      .on('error', (err) => {
+          console.log("Erro ao ler o arquivo CSV:", err);
+          res.status(500).json({ message: 'Error processing CSV file', error: err.message });
+      });
+});
+
